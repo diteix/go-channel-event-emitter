@@ -1,6 +1,7 @@
 package emitter
 
 import "testing"
+import "time"
 
 func TestRegister(t *testing.T) {
 	e := New()
@@ -113,7 +114,7 @@ func TestChannels(t *testing.T) {
 	}
 }
 
-func TestUnregisterChannel(t *testing.T) {
+func TestUnregisterEvent(t *testing.T) {
 	e := New()
 
 	event := "EVENT"
@@ -135,10 +136,36 @@ func TestUnregisterChannel(t *testing.T) {
 		t.Error(err)
 	}
 
+	//Wait Unregister to finish
+	time.Sleep(time.Second)
+
 	events, err = e.Events()
 
 	if len(events) != 0 {
 		t.Errorf("Expected 0 event, got %d", len(events))
+	}
+
+	param0Out0Func := func() string {
+		return "Return value of func"
+	}
+
+	emitter, receiver, _ := e.Register(event, param0Out0Func, param0Out0Func, param0Out0Func, param0Out0Func)
+
+	emitter <- make([]interface{}, 0)
+
+	e.UnregisterEvent(event)
+
+	//Wait Unregister to finish
+	time.Sleep(time.Second)
+
+	i := 0
+	for r := range receiver {
+		t.Log(r)
+		i++
+	}
+
+	if i != 4 {
+		t.Errorf("Expected 4 values from receiver, got %v", i)
 	}
 }
 
@@ -147,19 +174,11 @@ func TestEmitAndReceive(t *testing.T) {
 
 	event := "EVENT"
 
-	emitter, receiver, _ := e.Register(event)
-
-	emitter <- []interface{}{1}
-
-	if r := <-receiver; r.FuncName != "" {
-		t.Errorf("Expected no function to execute, got %s", r.FuncName)
-	}
-
 	param0Out0Func := func() {
 
 	}
 
-	emitter, receiver, _ = e.Register(event, param0Out0Func)
+	emitter, receiver, _ := e.Register(event, param0Out0Func)
 
 	emitter <- make([]interface{}, 0)
 

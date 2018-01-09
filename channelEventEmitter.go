@@ -38,44 +38,42 @@ type eventHandler struct {
 
 func (eH *eventHandler) listen() {
 	go func() {
-		for j := range eH.emitChan {
-			args := make([]reflect.Value, len(j))
-			out := make(chan Receiver)
+		var w sync.WaitGroup
 
-			for i, arg := range j {
+		for a := range eH.emitChan {
+			w.Add(1)
+			args := make([]reflect.Value, len(a))
+
+			for i, arg := range a {
 				args[i] = reflect.ValueOf(arg)
 			}
 
 			go func() {
 				var wG sync.WaitGroup
-				defer close(out)
 
 				for _, h := range eH.handlers {
+					wG.Add(1)
+
 					if isValidFuncForEvent(h.fn, args) {
 						wG.Add(1)
 
 						go func() {
-							defer wG.Done()
-
 							results := h.fn.Call(args)
-							out <- valuesResult(results).receiver(h)
+							eH.receiveChan <- valuesResult(results).receiver(h)
+							wG.Done()
 						}()
 					}
+
+					wG.Done()
 				}
 
 				wG.Wait()
+				w.Done()
 			}()
-
-			select {
-			case eH.receiveChan <- <-out:
-			case <-eH.doneChan:
-				break
-			}
 		}
 
-		go func() {
-			close(eH.receiveChan)
-		}()
+		w.Wait()
+		eH.doneChan <- true
 	}()
 }
 
@@ -208,9 +206,15 @@ func (e *Emitter) UnregisterEvent(event string) (err error) {
 	)
 
 	if eH, exists, err = e.eventExists(event); exists {
-		defer delete(e.events, event)
-		eH.handlers = nil
-		eH = nil
+		go func() {
+			defer delete(e.events, event)
+			eH.handlers = nil
+			close(eH.emitChan)
+			<-eH.doneChan
+			close(eH.doneChan)
+			close(eH.receiveChan)
+			eH = nil
+		}()
 	}
 
 	return
